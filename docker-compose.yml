@@ -1,0 +1,91 @@
+version: '3.7'
+
+services:
+  agent:
+    image: portainer/agent
+    environment:
+      # REQUIRED: Should be equal to the service name prefixed by "tasks." when
+      # deployed inside an overlay network
+      AGENT_CLUSTER_ADDR: tasks.agent
+      # AGENT_PORT: 9001
+      # LOG_LEVEL: debug
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/docker/volumes:/var/lib/docker/volumes
+    networks:
+      - agent_network
+    deploy:
+      mode: global
+      placement:
+        constraints: [node.platform.os == linux]
+
+  portainer:
+    image: portainer/portainer-ce
+    command: -H tcp://tasks.agent:9001 --tlsskipverify
+    ports:
+      - "9000:9000"
+      - "8000:8000"
+    volumes:
+      - portainer_data:/data
+      - /var/projects:/var/projects
+    networks:
+      - agent_network
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints: [node.role == manager]
+        
+  nginxproxym:
+    image: 'jc21/nginx-proxy-manager:latest'
+    ports:
+      - '80:80'
+      - '81:81'
+      - '443:443'
+    environment:
+      DB_MYSQL_HOST: "mariadb"
+      DB_MYSQL_PORT: 3306
+      DB_MYSQL_USER: "npsadm"
+      # TODO: Change MySQL Password
+      DB_MYSQL_PASSWORD: "mysql_password"
+      DB_MYSQL_NAME: "nginxproxym_db"
+    volumes:
+      - nginxpm_data:/data
+      - nginxpm_letsencrypt:/etc/letsencrypt
+    networks:
+      - proxynet
+      - agent_network
+    deploy:
+      mode: replicated
+      replicas: 1
+
+  mariadb:
+    image: 'jc21/mariadb-aria:latest'
+    environment:
+      # TODO: Change MySQL Password
+      MYSQL_ROOT_PASSWORD: 'mysql_root_password'
+      MYSQL_DATABASE: 'nginxproxym_db'
+      MYSQL_USER: 'npsadm'
+      # TODO: Change MySQL Password
+      MYSQL_PASSWORD: 'mysql_password'
+    volumes:
+      - nginxpm_db:/var/lib/mysql
+    networks:
+      - proxynet
+    deploy:
+      mode: replicated
+      replicas: 1
+
+networks:
+  proxynet:
+    name: proxynet
+  agent_network:
+    driver: overlay
+
+volumes:
+  portainer_data:
+  nginxpm_db:
+  nginxpm_data:
+  nginxpm_letsencrypt:
+
+
